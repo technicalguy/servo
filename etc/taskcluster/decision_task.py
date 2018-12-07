@@ -13,7 +13,7 @@ def main(task_for, mock=False):
         if CONFIG.git_ref in ["refs/heads/auto", "refs/heads/try", "refs/heads/try-taskcluster"]:
             CONFIG.treeherder_repo_name = "servo/servo-" + CONFIG.git_ref.split("/")[-1]
 
-            linux_tidy_unit()
+            linux_tidy_unit_docs()
             android_arm32()
             windows_unit()
             macos_unit()
@@ -68,21 +68,32 @@ windows_sparse_checkout = [
 ]
 
 
-def linux_tidy_unit():
+def linux_tidy_unit_docs():
     return (
-        linux_build_task("Tidy + dev build + unit tests")
-        .with_treeherder("Linux x64", "Tidy+Unit")
+        linux_build_task("Tidy + dev build + unit tests + docs")
+        .with_treeherder("Linux x64", "Tidy+Unit+Doc")
         .with_script("""
             ./mach test-tidy --no-progress --all
             ./mach build --dev
             ./mach test-unit
             ./mach package --dev
             ./mach test-tidy --no-progress --self-test
+
             ./etc/memory_reports_over_time.py --test
             ./etc/taskcluster/mock.py
             ./etc/ci/lockfile_changed.sh
             ./etc/ci/check_no_panic.sh
-        """).create()
+
+            ./mach doc
+            cd target/doc
+            git init
+            time git add .
+            git -c user.name="Taskcluster" -c user.email="" \
+                commit -q -m "Rebuild Servo documentation"
+            git bundle create docs.bundle HEAD
+        """)
+        .with_artifacts("/repo/target/doc/docs.bundle")
+        .find_or_create("docs." + CONFIG.git_sha)
     )
 
 
@@ -95,7 +106,8 @@ def macos_unit():
             ./mach test-unit
             ./mach package --dev
             ./etc/ci/lockfile_changed.sh
-        """).create()
+        """)
+        .create()
     )
 
 
